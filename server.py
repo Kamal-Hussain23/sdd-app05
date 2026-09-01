@@ -4,7 +4,9 @@ A small web server built with Python's built-in tools only. It
 holds the menu and orders in memory (there is no database).
 
 Exposes a health check, the menu, endpoints to place and list orders,
-and an endpoint for staff to mark an order as ready.
+and endpoints for staff to move an order forward through its status
+lifecycle (received -> ready -> done) and for customers to track a
+single order by its number.
 """
 
 import functools
@@ -94,9 +96,10 @@ def place_order(items: list[str]) -> Order:
 # Staff-tracking: status contract and operations
 # ---------------------------------------------------------------------------
 
-# The allowed lifecycle of an order. A new order starts as "received" and
-# staff can mark it "ready".
-VALID_STATUSES = ("received", "ready")
+# The allowed lifecycle of an order. A new order starts as "received", moves
+# forward to "ready", then to "done". Each step is a contract: an order can
+# only move to the status directly after its current one.
+STATUS_ORDER = ("received", "ready", "done")
 
 
 class UnknownOrderError(Exception):
@@ -112,21 +115,35 @@ def get_orders() -> list[Order]:
     return sorted(ORDERS, key=lambda order: order.order_id, reverse=True)
 
 
-def update_order_status(order_id: int, status: str) -> Order:
-    """Set an order's status and return it.
-
-    Raises UnknownOrderError if the order id is unknown, or
-    InvalidStatusError if the status is not part of the contract.
-    """
-    if status not in VALID_STATUSES:
-        raise InvalidStatusError(f"unknown status: {status}")
-
+def get_order(order_id: int) -> Order:
+    """Return a single order by id, raising UnknownOrderError if not found."""
     for order in ORDERS:
         if order.order_id == order_id:
-            order.status = status
             return order
-
     raise UnknownOrderError(f"order not found: {order_id}")
+
+
+def update_order_status(order_id: int, status: str) -> Order:
+    """Move an order forward to the given status and return it.
+
+    An order can only move one step forward through the lifecycle
+    (received -> ready -> done). Moving backward, staying in place, or using
+    an unknown status is rejected.
+
+    Raises UnknownOrderError if the order id is unknown, or
+    InvalidStatusError if the status is not allowed for this order.
+    """
+    if status not in STATUS_ORDER:
+        raise InvalidStatusError(f"unknown status: {status}")
+
+    order = get_order(order_id)
+    current = STATUS_ORDER.index(order.status)
+    target = STATUS_ORDER.index(status)
+    if target != current + 1:
+        raise InvalidStatusError(f"cannot move an order from {order.status} to {status}")
+
+    order.status = status
+    return order
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +197,8 @@ class CafeHandler(BaseHTTPRequestHandler):
             self._send_menu()
         elif self.path == "/api/orders":
             self._send_orders()
+        elif self.path.startswith("/api/orders/") and "/" not in self.path[len("/api/orders/") :]:
+            self._send_single_order()
         elif self.path in ("/", "/index.html"):
             self._send_html(FRONTEND_HTML)
         elif self.path == "/staff":
@@ -208,6 +227,19 @@ class CafeHandler(BaseHTTPRequestHandler):
         ]
         self._send_json({"orders": orders})
 
+    def _send_single_order(self) -> None:
+        """Send one order to a customer who is tracking their order."""
+        order_id = self._order_id_from_path()
+        if order_id is None:
+            self._send_json({"error": "order not found"}, status=404)
+            return
+        try:
+            order = get_order(order_id)
+        except UnknownOrderError:
+            self._send_json({"error": "order not found"}, status=404)
+            return
+        self._send_json({"order_id": order.order_id, "items": order.items, "status": order.status})
+
     def _update_order_status(self) -> None:
         """Set an order's status from the request body and reply."""
         order_id = self._order_id_from_status_path()
@@ -234,7 +266,13 @@ class CafeHandler(BaseHTTPRequestHandler):
 
     def _order_id_from_status_path(self) -> int | None:
         """Read the order id from a /api/orders/<id>/status path."""
-        middle = self.path[len("/api/orders/") : -len("/status")]
+        return self._order_id_from_path()
+
+    def _order_id_from_path(self) -> int | None:
+        """Read the order id from a /api/orders/<id>[status] path."""
+        middle = self.path[len("/api/orders/") :]
+        if middle.endswith("/status"):
+            middle = middle[: -len("/status")]
         try:
             return int(middle)
         except ValueError:
