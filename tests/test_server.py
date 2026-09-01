@@ -159,6 +159,94 @@ def test_update_status_invalid_value_returns_400(server_url: str, clean_orders: 
     assert server.ORDERS[0].status == "received"
 
 
+def test_update_status_to_done_success(server_url: str, clean_orders: None) -> None:
+    """A valid 'done' update returns 200 and the new status."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte"]})
+    post_json(f"{server_url}/api/orders/1/status", {"status": "ready"})
+    status, body = post_json(f"{server_url}/api/orders/1/status", {"status": "done"})
+    assert status == OK
+    assert body == {"order_id": 1, "status": "done"}
+
+
+def test_full_status_lifecycle(server_url: str, clean_orders: None) -> None:
+    """An order can move received -> ready -> done."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte"]})
+    _, first = post_json(f"{server_url}/api/orders/1/status", {"status": "ready"})
+    assert first["status"] == "ready"
+    _, second = post_json(f"{server_url}/api/orders/1/status", {"status": "done"})
+    assert second["status"] == "done"
+    assert server.ORDERS[0].status == "done"
+
+
+def test_update_status_backward_done_to_ready_rejected(server_url: str, clean_orders: None) -> None:
+    """Moving done -> ready is rejected and status is unchanged."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte"]})
+    # Move to done first.
+    post_json(f"{server_url}/api/orders/1/status", {"status": "ready"})
+    post_json(f"{server_url}/api/orders/1/status", {"status": "done"})
+    status, body = post_json(f"{server_url}/api/orders/1/status", {"status": "ready"})
+    assert status == BAD_REQUEST
+    assert "error" in body
+    assert server.ORDERS[0].status == "done"
+
+
+def test_update_status_backward_ready_to_received_rejected(
+    server_url: str, clean_orders: None
+) -> None:
+    """Moving ready -> received is rejected and status is unchanged."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte"]})
+    post_json(f"{server_url}/api/orders/1/status", {"status": "ready"})
+    status, body = post_json(f"{server_url}/api/orders/1/status", {"status": "received"})
+    assert status == BAD_REQUEST
+    assert "error" in body
+    assert server.ORDERS[0].status == "ready"
+
+
+def test_update_status_in_place_rejected(server_url: str, clean_orders: None) -> None:
+    """Moving received -> received is rejected and status is unchanged."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte"]})
+    status, body = post_json(f"{server_url}/api/orders/1/status", {"status": "received"})
+    assert status == BAD_REQUEST
+    assert "error" in body
+    assert server.ORDERS[0].status == "received"
+
+
+def test_update_status_skipping_step_rejected(server_url: str, clean_orders: None) -> None:
+    """Moving received -> done (skipping ready) is rejected and unchanged."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte"]})
+    status, body = post_json(f"{server_url}/api/orders/1/status", {"status": "done"})
+    assert status == BAD_REQUEST
+    assert "error" in body
+    assert server.ORDERS[0].status == "received"
+
+
+def test_get_single_order_endpoint_success(server_url: str, clean_orders: None) -> None:
+    """GET /api/orders/<id> returns the single order."""
+    post_json(f"{server_url}/api/orders", {"items": ["Latte", "Tea"]})
+    with urllib.request.urlopen(f"{server_url}/api/orders/1") as response:
+        assert response.status == OK
+        body = json.load(response)
+    assert body == {"order_id": 1, "items": ["Latte", "Tea"], "status": "received"}
+
+
+def test_get_single_order_unknown_id_returns_404(server_url: str, clean_orders: None) -> None:
+    """GET /api/orders/<id> with an unknown id returns 404."""
+    try:
+        with urllib.request.urlopen(f"{server_url}/api/orders/999") as response:
+            assert response.status == OK
+    except urllib.error.HTTPError as error:
+        assert error.code == NOT_FOUND
+
+
+def test_get_single_order_non_numeric_id_returns_404(server_url: str) -> None:
+    """GET /api/orders/<id> with a non-numeric id returns 404."""
+    try:
+        with urllib.request.urlopen(f"{server_url}/api/orders/abc") as response:
+            assert response.status == OK
+    except urllib.error.HTTPError as error:
+        assert error.code == NOT_FOUND
+
+
 def test_staff_page_served(server_url: str) -> None:
     """GET /staff returns the staff page."""
     with urllib.request.urlopen(f"{server_url}/staff") as response:

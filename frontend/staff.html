@@ -92,10 +92,27 @@
             }
           });
           card.appendChild(button);
+        } else if (order.status === "ready") {
+          const button = document.createElement("button");
+          button.textContent = "Mark done";
+          button.addEventListener("click", async () => {
+            const res = await fetch("/api/orders/" + order.order_id + "/status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "done" }),
+            });
+            if (res.ok) {
+              await loadOrders();
+            } else {
+              const err = await res.json();
+              alert("Update failed: " + (err.error || "unknown error"));
+            }
+          });
+          card.appendChild(button);
         } else {
           const note = document.createElement("p");
           note.className = "muted";
-          note.textContent = "Ready — done.";
+          note.textContent = "Done.";
           card.appendChild(note);
         }
 

@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const pages = { "index.html": ["Cafe", "place-order", "/api/menu"], "staff.html": ["Staff", "board", "/api/orders"] };
+const pages = { "index.html": ["Cafe", "place-order", "/api/menu", "track-order", "/api/orders/"], "staff.html": ["Staff", "board", "/api/orders", "done"] };
 let failed = false;
 
 for (const [page, needles] of Object.entries(pages)) {

@@ -36,6 +36,9 @@
     #order-result {
       font-weight: bold;
     }
+    #track-result {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -49,6 +52,14 @@
     <ul id="cart"></ul>
     <button id="place-order">Place order</button>
     <p id="order-result"></p>
+  </section>
+
+  <section>
+    <h2>Track your order</h2>
+    <p>Enter the order number you were given to see its status.</p>
+    <input id="track-number" type="number" min="1" placeholder="Order number">
+    <button id="track-order">Track</button>
+    <p id="track-result"></p>
   </section>
 
   <section>
@@ -128,6 +139,38 @@
         }
       } catch (error) {
         orderResult.textContent = "Could not place the order.";
+      }
+    });
+
+    // ----- Track order -----
+    const trackNumberInput = document.getElementById("track-number");
+    const trackButton = document.getElementById("track-order");
+    const trackResult = document.getElementById("track-result");
+
+    const STATUS_LABELS = {
+      received: "received — waiting to be made",
+      ready: "ready — come and get it!",
+      done: "done — finished",
+    };
+
+    trackButton.addEventListener("click", async () => {
+      const orderId = trackNumberInput.value.trim();
+      if (orderId === "") {
+        trackResult.textContent = "Please enter an order number.";
+        return;
+      }
+      trackResult.textContent = "Looking up your order...";
+      try {
+        const response = await fetch("/api/orders/" + orderId);
+        if (response.status === 404) {
+          trackResult.textContent = "Order not found.";
+          return;
+        }
+        const data = await response.json();
+        trackResult.textContent =
+          "Order #" + data.order_id + " — " + (STATUS_LABELS[data.status] || data.status);
+      } catch (error) {
+        trackResult.textContent = "Could not look up the order.";
       }
     });
 
