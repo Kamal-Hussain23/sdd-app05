@@ -1,0 +1,9 @@
+{
+  "name": "sdd-app05-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "node scripts/lint.js",
+    "test": "node scripts/test.js"
+  }
+}

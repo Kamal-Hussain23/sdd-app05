@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff — Orders</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 40rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    h1 {
+      text-align: center;
+    }
+    .order-card {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .order-card .status {
+      font-weight: bold;
+    }
+    .order-card button {
+      margin-top: 0.5rem;
+      cursor: pointer;
+    }
+    .muted {
+      color: #777;
+    }
+  </style>
+</head>
+<body>
+  <h1>Staff — Orders</h1>
+  <p><a href="/">Back to customer order page</a></p>
+
+  <div id="board"><p>Loading orders...</p></div>
+
+  <script>
+    const board = document.getElementById("board");
+
+    async function loadOrders() {
+      board.innerHTML = "<p>Loading orders...</p>";
+      try {
+        const response = await fetch("/api/orders");
+        const data = await response.json();
+        renderOrders(data.orders);
+      } catch (error) {
+        board.innerHTML = "<p>Could not load orders.</p>";
+      }
+    }
+
+    function renderOrders(orders) {
+      board.innerHTML = "";
+      if (orders.length === 0) {
+        const empty = document.createElement("p");
+        empty.textContent = "No orders yet.";
+        board.appendChild(empty);
+        return;
+      }
+
+      orders.forEach((order) => {
+        const card = document.createElement("div");
+        card.className = "order-card";
+
+        const header = document.createElement("p");
+        header.innerHTML =
+          "Order #" + order.order_id +
+          " — status: <span class='status'>" + order.status + "</span>";
+        card.appendChild(header);
+
+        const items = document.createElement("p");
+        items.textContent = "Items: " + order.items.join(", ");
+        card.appendChild(items);
+
+        if (order.status === "received") {
+          const button = document.createElement("button");
+          button.textContent = "Mark ready";
+          button.addEventListener("click", async () => {
+            const res = await fetch("/api/orders/" + order.order_id + "/status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "ready" }),
+            });
+            if (res.ok) {
+              await loadOrders();
+            } else {
+              const err = await res.json();
+              alert("Update failed: " + (err.error || "unknown error"));
+            }
+          });
+          card.appendChild(button);
+        } else {
+          const note = document.createElement("p");
+          note.className = "muted";
+          note.textContent = "Ready — done.";
+          card.appendChild(note);
+        }
+
+        board.appendChild(card);
+      });
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>
